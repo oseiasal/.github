@@ -1,0 +1,10 @@
+{
+    "name": "Amazon ECR Build & Push Pipeline",
+    "description": "Pipeline oficial para build de imagem Docker e push seguro para o Amazon ECR (suporta AWS OIDC Role ou Access Keys/Session Token).",
+    "iconName": "aws",
+    "categories": [
+        "Docker",
+        "AWS",
+        "Deployment"
+    ]
+}

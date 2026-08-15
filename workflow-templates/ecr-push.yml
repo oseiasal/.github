@@ -1,0 +1,27 @@
+name: Amazon ECR Build & Push
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+concurrency:
+  group: ecr-push-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  push-ecr:
+    name: Build & Push ECR
+    uses: oseiasal/.github/.github/workflows/reusable-docker-push.yml@main
+    with:
+      image-name: '$REPOSITORY_NAME'
+      dockerfile-path: 'Dockerfile'
+      aws-region: 'us-east-1'
+      push-image: true
+      tag-latest: true
+    secrets:
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}

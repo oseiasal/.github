@@ -1,0 +1,114 @@
+name: 🐳 Docker Build & ECR Push
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        description: 'Nome da imagem / repositório no ECR'
+        required: true
+        type: string
+      dockerfile-path:
+        description: 'Caminho para o Dockerfile'
+        required: false
+        type: string
+        default: 'Dockerfile'
+      aws-region:
+        description: 'Região da AWS para o ECR'
+        required: false
+        type: string
+        default: 'us-east-1'
+      push-image:
+        description: 'Se deve efetuar o push para o ECR'
+        required: false
+        type: boolean
+        default: true
+      tag-latest:
+        description: 'Se deve marcar a tag latest'
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      AWS_ACCOUNT_ID:
+        required: false
+      AWS_ROLE_TO_ASSUME:
+        required: false
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+      AWS_SESSION_TOKEN:
+        required: false
+
+jobs:
+  ecr-push:
+    name: 🐳 Build & Push ECR
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🔨 Build Docker Local Image
+        run: |
+          docker build -f ${{ inputs.dockerfile-path }} -t ${{ inputs.image-name }}:${{ github.sha }} .
+          if [ "${{ inputs.tag-latest }}" = "true" ]; then
+            docker tag ${{ inputs.image-name }}:${{ github.sha }} ${{ inputs.image-name }}:latest
+          fi
+
+      # 1. Autenticação AWS (OIDC / IAM Role)
+      - name: Configure AWS Credentials (OIDC Role)
+        if: inputs.push-image == true && (secrets.AWS_ROLE_TO_ASSUME != '' || secrets.AWS_ACCOUNT_ID != '') && secrets.AWS_ACCESS_KEY_ID == ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME != '' && secrets.AWS_ROLE_TO_ASSUME || format('arn:aws:iam::{0}:role/GitHubActionsECRRole', secrets.AWS_ACCOUNT_ID) }}
+          aws-region: ${{ inputs.aws-region }}
+
+      # 2. Autenticação AWS (Access Keys / AWS Academy Session Token)
+      - name: Configure AWS Credentials (Keys / Token)
+        if: inputs.push-image == true && secrets.AWS_ACCESS_KEY_ID != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ inputs.aws-region }}
+
+      # 3. Login no Amazon ECR
+      - name: Login to Amazon ECR
+        if: inputs.push-image == true
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 4. Push para o Amazon ECR
+      - name: 🚀 Push Image to Amazon ECR
+        if: inputs.push-image == true
+        run: |
+          ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          TARGET_IMAGE="$ECR_REGISTRY/${{ inputs.image-name }}"
+          
+          docker tag ${{ inputs.image-name }}:${{ github.sha }} $TARGET_IMAGE:${{ github.sha }}
+          docker push $TARGET_IMAGE:${{ github.sha }}
+          
+          if [ "${{ inputs.tag-latest }}" = "true" ]; then
+            docker tag ${{ inputs.image-name }}:${{ github.sha }} $TARGET_IMAGE:latest
+            docker push $TARGET_IMAGE:latest
+          fi
+          
+          echo "IMAGE_URI=$TARGET_IMAGE:${{ github.sha }}" >> $GITHUB_ENV
+
+      - name: 📊 Resumo do Deploy ECR
+        if: always()
+        run: |
+          echo "### 🐳 Amazon ECR Build & Push Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Propriedade | Valor |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Imagem** | \`${{ inputs.image-name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Tag SHA** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Região AWS** | \`${{ inputs.aws-region }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Push Efetuado** | \`${{ inputs.push-image }}\` |" >> $GITHUB_STEP_SUMMARY
