@@ -1,0 +1,10 @@
+{
+    "name": "DevSecOps Security Scan (SAST & SCA)",
+    "description": "Varredura automatizada de segurança com SAST (Bandit / Gosec), SCA (Trivy FS) e bloqueio estrito em vulnerabilidades CRITICAL/HIGH.",
+    "iconName": "shield",
+    "categories": [
+        "Security",
+        "DevSecOps",
+        "Compliance"
+    ]
+}

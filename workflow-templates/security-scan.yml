@@ -1,0 +1,20 @@
+name: DevSecOps Security Scan
+
+on:
+  push:
+    branches: [ $default-branch, main, master ]
+  pull_request:
+    branches: [ $default-branch, main, master ]
+
+concurrency:
+  group: security-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security:
+    name: DevSecOps Security Analysis (SAST & SCA)
+    uses: oseiasal/.github/.github/workflows/reusable-security.yml@main
+    with:
+      language: 'auto' # 'python', 'go' ou 'auto'
+      trivy-severity: 'CRITICAL,HIGH'
+      fail-on-critical: true

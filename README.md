@@ -21,6 +21,8 @@ Este repositório centraliza os **Workflows Reutilizáveis (Reusable Workflows)*
 │   ├── python-ci.yml
 │   ├── go-ci.properties.json
 │   ├── go-ci.yml
+│   ├── security-scan.properties.json
+│   ├── security-scan.yml
 │   ├── docker-build.properties.json
 │   └── docker-build.yml
 └── README.md
