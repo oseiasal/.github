@@ -1,4 +1,4 @@
-name: 🐳 Docker Build & ECR Push
+name: Docker Build & ECR Push
 
 on:
   workflow_call:
@@ -41,7 +41,7 @@ on:
 
 jobs:
   ecr-push:
-    name: 🐳 Build & Push ECR
+    name: Docker Build & ECR Push
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -54,24 +54,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 🔨 Build Docker Local Image
+      - name: Build Docker Local Image
         run: |
           docker build -f ${{ inputs.dockerfile-path }} -t ${{ inputs.image-name }}:${{ github.sha }} .
           if [ "${{ inputs.tag-latest }}" = "true" ]; then
             docker tag ${{ inputs.image-name }}:${{ github.sha }} ${{ inputs.image-name }}:latest
           fi
 
-      # 1. Autenticação AWS (OIDC / IAM Role)
-      - name: Configure AWS Credentials (OIDC Role)
-        if: inputs.push-image == true && (secrets.AWS_ROLE_TO_ASSUME != '' || secrets.AWS_ACCOUNT_ID != '') && secrets.AWS_ACCESS_KEY_ID == ''
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME != '' && secrets.AWS_ROLE_TO_ASSUME || format('arn:aws:iam::{0}:role/GitHubActionsECRRole', secrets.AWS_ACCOUNT_ID) }}
-          aws-region: ${{ inputs.aws-region }}
-
-      # 2. Autenticação AWS (Access Keys / AWS Academy Session Token)
+      # 1. Autenticação AWS com Access Keys / Academy Token
       - name: Configure AWS Credentials (Keys / Token)
-        if: inputs.push-image == true && secrets.AWS_ACCESS_KEY_ID != ''
+        if: inputs.push-image && secrets.AWS_ACCESS_KEY_ID != ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -79,15 +71,31 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ inputs.aws-region }}
 
-      # 3. Login no Amazon ECR
+      # 2. Autenticação AWS com Role OIDC Explícita
+      - name: Configure AWS Credentials (OIDC Explicit Role)
+        if: inputs.push-image && secrets.AWS_ROLE_TO_ASSUME != '' && secrets.AWS_ACCESS_KEY_ID == ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ inputs.aws-region }}
+
+      # 3. Autenticação AWS com Role OIDC Padrão (via AWS_ACCOUNT_ID)
+      - name: Configure AWS Credentials (OIDC Default Role)
+        if: inputs.push-image && secrets.AWS_ACCOUNT_ID != '' && secrets.AWS_ROLE_TO_ASSUME == '' && secrets.AWS_ACCESS_KEY_ID == ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActionsECRRole
+          aws-region: ${{ inputs.aws-region }}
+
+      # 4. Login no Amazon ECR
       - name: Login to Amazon ECR
-        if: inputs.push-image == true
+        if: inputs.push-image
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # 4. Push para o Amazon ECR
-      - name: 🚀 Push Image to Amazon ECR
-        if: inputs.push-image == true
+      # 5. Push para o Amazon ECR
+      - name: Push Image to Amazon ECR
+        if: inputs.push-image
         run: |
           ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
           TARGET_IMAGE="$ECR_REGISTRY/${{ inputs.image-name }}"
@@ -99,10 +107,8 @@ jobs:
             docker tag ${{ inputs.image-name }}:${{ github.sha }} $TARGET_IMAGE:latest
             docker push $TARGET_IMAGE:latest
           fi
-          
-          echo "IMAGE_URI=$TARGET_IMAGE:${{ github.sha }}" >> $GITHUB_ENV
 
-      - name: 📊 Resumo do Deploy ECR
+      - name: Amazon ECR Push Summary
         if: always()
         run: |
           echo "### 🐳 Amazon ECR Build & Push Summary" >> $GITHUB_STEP_SUMMARY
