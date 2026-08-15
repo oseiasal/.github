@@ -1,0 +1,11 @@
+{
+    "name": "Go CD Pipeline (Amazon ECR Deploy)",
+    "description": "Pipeline de Continuous Delivery para Go com Quality Gate, Security Gate e Deploy automatizado no Amazon ECR.",
+    "iconName": "go",
+    "categories": [
+        "Go",
+        "Deployment",
+        "AWS",
+        "Docker"
+    ]
+}

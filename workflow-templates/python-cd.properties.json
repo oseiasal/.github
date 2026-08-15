@@ -1,0 +1,11 @@
+{
+    "name": "Python CD Pipeline (Amazon ECR Deploy)",
+    "description": "Pipeline de Continuous Delivery para Python com Quality Gate, Security Gate e Deploy automatizado no Amazon ECR.",
+    "iconName": "python",
+    "categories": [
+        "Python",
+        "Deployment",
+        "AWS",
+        "Docker"
+    ]
+}

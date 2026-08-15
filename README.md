@@ -19,77 +19,70 @@ Este repositório centraliza os **Workflows Reutilizáveis (Reusable Workflows)*
 │       └── build.yml                    # Pipeline de build local do repositório
 ├── workflow-templates/                  # Templates visíveis na aba Actions do GitHub
 │   ├── python-ci.properties.json
-│   ├── python-ci.yml
+│   ├── python-ci.yml                    # CI Python: Quality & Security em PRs/develop
+│   ├── python-cd.properties.json
+│   ├── python-cd.yml                    # CD Python: Quality, Security & Deploy ECR na main
 │   ├── go-ci.properties.json
-│   ├── go-ci.yml
+│   ├── go-ci.yml                        # CI Go: Quality & Security em PRs/develop
+│   ├── go-cd.properties.json
+│   ├── go-cd.yml                        # CD Go: Quality, Security & Deploy ECR na main
 │   ├── security-scan.properties.json
-│   ├── security-scan.yml
-│   ├── docker-build.properties.json
-│   ├── docker-build.yml
+│   ├── security-scan.yml                # Template dedicado de segurança
 │   ├── ecr-push.properties.json
-│   └── ecr-push.yml
+│   └── ecr-push.yml                     # Template isolado de push ECR
 └── README.md
 ```
 
 ---
 
+## 🔀 Estratégia de Branching, CI & CD
+
+| Pipeline | Arquivo | Gatilhos | Estágios (Jobs) |
+| :--- | :--- | :--- | :--- |
+| **CI (Integração Contínua)** | `ci.yml` | • PRs para `develop`<br>• PRs para `main`<br>• Push na `develop` | • **PR para develop:** `quality` (Lint + Testes)<br>• **Push develop & PR main:** `quality` + `security` |
+| **CD (Entrega Contínua)** | `cd.yml` | • Push na `main` / `master`<br>• `workflow_dispatch` | 1. `quality` (Quality Gate)<br>2. `security` (Security Gate)<br>3. `deploy` (Docker Build & Push ECR) |
+| **Security Isolado** | `security.yml` | • Agendamento semanal (Cron) | `security` (SAST & SCA) |
+
+---
+
 ## 🛠️ Workflows Reutilizáveis Disponíveis
 
-### 1. 🐍 Python Quality Workflow (`reusable-python-quality.yml`)
-* **Jobs:** `lint` (Ruff/Flake8) e `unit-test` (Pytest com cobertura).
-* **Uso:**
-  ```yaml
-  uses: oseiasal/.github/.github/workflows/reusable-python-quality.yml@main
-  with:
-    python-version: '3.11'
-  ```
+### 1. 🐍 Python Quality (`reusable-python-quality.yml`)
+```yaml
+uses: oseiasal/.github/.github/workflows/reusable-python-quality.yml@main
+with:
+  python-version: '3.11'
+```
 
-### 2. 🐹 Go Quality Workflow (`reusable-go-quality.yml`)
-* **Jobs:** `lint` (Go Vet / GolangCI-Lint) e `build-and-test` (Go Build / Go Test).
-* **Uso:**
-  ```yaml
-  uses: oseiasal/.github/.github/workflows/reusable-go-quality.yml@main
-  with:
-    go-version: '1.22'
-  ```
+### 2. 🐹 Go Quality (`reusable-go-quality.yml`)
+```yaml
+uses: oseiasal/.github/.github/workflows/reusable-go-quality.yml@main
+with:
+  go-version: '1.22'
+```
 
-### 3. 🛡️ DevSecOps Security Workflow (`reusable-security.yml`)
-* **Jobs:** `sast-python` (Bandit), `sast-go` (Gosec) e `sca-trivy` (Trivy FS com bloqueio estrito em falhas críticas).
-* **Uso:**
-  ```yaml
-  uses: oseiasal/.github/.github/workflows/reusable-security.yml@main
-  with:
-    language: 'auto' # 'python', 'go' ou 'auto'
-    trivy-severity: 'CRITICAL,HIGH'
-    fail-on-critical: true
-  ```
+### 3. 🛡️ DevSecOps Security (`reusable-security.yml`)
+```yaml
+uses: oseiasal/.github/.github/workflows/reusable-security.yml@main
+with:
+  language: 'auto' # 'python', 'go' ou 'auto'
+  trivy-severity: 'CRITICAL,HIGH'
+  fail-on-critical: true
+```
 
-### 4. 🐳 Docker Build Local (`reusable-build.yml`)
-* **Jobs:** `docker-build` (Build local via Buildx).
-* **Uso:**
-  ```yaml
-  uses: oseiasal/.github/.github/workflows/reusable-build.yml@main
-  with:
-    dockerfile-path: 'Dockerfile'
-    image-name: 'meu-servico'
-    push-image: false
-  ```
-
-### 5. 🚀 Docker Build & ECR Push (`reusable-docker-push.yml`)
-* **Jobs:** `ecr-push` (Build da imagem e push autenticado no Amazon ECR via OIDC Role ou Access Keys/Session Token).
-* **Uso:**
-  ```yaml
-  uses: oseiasal/.github/.github/workflows/reusable-docker-push.yml@main
-  with:
-    image-name: 'meu-servico'
-    dockerfile-path: 'Dockerfile'
-    aws-region: 'us-east-1'
-    push-image: true
-    tag-latest: true
-  secrets:
-    AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-    AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-    AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-    AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-    AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-  ```
+### 4. 🚀 Docker Build & ECR Push (`reusable-docker-push.yml`)
+```yaml
+uses: oseiasal/.github/.github/workflows/reusable-docker-push.yml@main
+with:
+  image-name: 'meu-servico'
+  dockerfile-path: 'Dockerfile'
+  aws-region: 'us-east-1'
+  push-image: true
+  tag-latest: true
+secrets:
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+```
