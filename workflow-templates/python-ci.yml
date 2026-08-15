@@ -1,0 +1,40 @@
+name: Python CI/CD Pipeline
+
+on:
+  push:
+    branches: [ $default-branch, main, master ]
+  pull_request:
+    branches: [ $default-branch, main, master ]
+
+concurrency:
+  group: python-pipeline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 1. Qualidade de Código & Testes Unitários
+  quality:
+    name: Code Quality & Unit Tests
+    uses: oseiasal/.github/.github/workflows/reusable-python-quality.yml@main
+    with:
+      python-version: '3.11'
+
+  # 2. Segurança DevSecOps (SAST & SCA com bloqueio em CRITICAL)
+  security:
+    name: DevSecOps Security Analysis
+    needs: quality
+    uses: oseiasal/.github/.github/workflows/reusable-security.yml@main
+    with:
+      language: 'python'
+      python-version: '3.11'
+      trivy-severity: 'CRITICAL,HIGH'
+      fail-on-critical: true
+
+  # 3. Build da Imagem Docker e Scan de Vulnerabilidade de Container
+  docker-build:
+    name: Docker Container Build
+    needs: security
+    uses: oseiasal/.github/.github/workflows/reusable-build.yml@main
+    with:
+      dockerfile-path: 'Dockerfile'
+      image-name: '$REPOSITORY_NAME'
+      push-image: false

@@ -1,0 +1,16 @@
+name: Docker Build & Security Scan
+
+on:
+  push:
+    branches: [ $default-branch, main, master ]
+  pull_request:
+    branches: [ $default-branch, main, master ]
+
+jobs:
+  docker:
+    name: Docker Container Build
+    uses: oseiasal/.github/.github/workflows/reusable-build.yml@main
+    with:
+      dockerfile-path: 'Dockerfile'
+      image-name: '$REPOSITORY_NAME'
+      push-image: false

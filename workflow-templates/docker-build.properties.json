@@ -1,0 +1,10 @@
+{
+    "name": "Docker Build & Container Security Scan",
+    "description": "Pipeline para Buildx de Containers Docker com Scan de Vulnerabilidades Trivy e suporte a Push ECR/Registry.",
+    "iconName": "docker",
+    "categories": [
+        "Docker",
+        "Security",
+        "Deployment"
+    ]
+}

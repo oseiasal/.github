@@ -1,0 +1,10 @@
+{
+    "name": "Python CI/CD & DevSecOps Pipeline",
+    "description": "Pipeline oficial com Linter (Ruff/Flake8), Pytest com Cobertura, SAST (Bandit), SCA (Trivy FS) e Docker Container Scan.",
+    "iconName": "python",
+    "categories": [
+        "Python",
+        "Security",
+        "Docker"
+    ]
+}

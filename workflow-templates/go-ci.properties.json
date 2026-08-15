@@ -1,0 +1,10 @@
+{
+    "name": "Go CI/CD & DevSecOps Pipeline",
+    "description": "Pipeline oficial para Go com Linter (Vet/GolangCI), Build, Unit Tests, SAST (Gosec), SCA (Trivy FS) e Docker Container Scan.",
+    "iconName": "go",
+    "categories": [
+        "Go",
+        "Security",
+        "Docker"
+    ]
+}
