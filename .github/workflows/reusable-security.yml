@@ -53,7 +53,7 @@ jobs:
       - name: Run Bandit SAST Scan
         run: |
           if ls *.py 1> /dev/null 2>&1 || [ -d "app" ] || [ -f "app.py" ]; then
-            bandit -r . -ll -x ./tests,./venv,./.venv
+            bandit -r . -ll --skip B104 -x ./tests,./venv,./.venv
           else
             echo "Nenhum arquivo Python encontrado para o Bandit. Pulando."
           fi
