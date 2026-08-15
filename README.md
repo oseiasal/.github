@@ -37,9 +37,7 @@ Este repositório centraliza os **Workflows Reutilizáveis (Reusable Workflows)*
 
 ## 🔀 Estratégia de Branching, CI & CD
 
-| Pipeline | Arquivo | Gatilhos | Estágios (Jobs) |
-| :--- | :--- | :--- | :--- |
-| **CI (Integração Contínua)** | `ci.yml` | • PRs para `develop`<br>• PRs para `main`<br>• Push na `develop` | • **PR para develop:** `quality` (Lint + Testes)<br>• **Push develop & PR main:** `quality` + `security` |
+| **CI (Integração Contínua)** | `ci.yml` | • PRs para `develop`<br>• PRs para `main` | • **PR para develop:** `quality` (Lint + Testes)<br>• **PR para main:** `quality` + `security` |
 | **CD (Entrega Contínua)** | `cd.yml` | • Push na `main` / `master`<br>• `workflow_dispatch` | 1. `quality` (Quality Gate)<br>2. `security` (Security Gate)<br>3. `deploy` (Docker Build & Push ECR) |
 | **Security Isolado** | `security.yml` | • Agendamento semanal (Cron) | `security` (SAST & SCA) |
 

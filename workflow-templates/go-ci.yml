@@ -1,18 +1,16 @@
-name: Go CI/CD Pipeline
+name: Go CI Pipeline
 
 on:
-  push:
-    branches: [ main, master, develop, dev ]
   pull_request:
-    branches: [ main, master, develop, dev ]
+    branches: [ develop, dev, main, master ]
 
 concurrency:
-  group: go-pipeline-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # 1. Compilação, Linter & Testes Unitários
-  # Roda em todos os Pushes e Pull Requests
+  # 1. Compilação, Linter & Testes Unitários (Go)
+  # Executado em todos os Pull Requests (para develop e para main)
   quality:
     name: Code Quality & Unit Tests
     uses: oseiasal/.github/.github/workflows/reusable-go-quality.yml@main
@@ -20,37 +18,15 @@ jobs:
       go-version: '1.22'
 
   # 2. Segurança DevSecOps (SAST & SCA)
-  # Roda em: Push na Main/Master, Push na Develop/Dev e PRs para Main/Master
-  # (Ignora PRs para Develop)
+  # Executado em Pull Requests para a main/master
+  # (Ignorado em PRs para a develop)
   security:
     name: DevSecOps Security Analysis
     needs: quality
-    if: |
-      github.event_name == 'push' ||
-      (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'master'))
+    if: github.base_ref == 'main' || github.base_ref == 'master'
     uses: oseiasal/.github/.github/workflows/reusable-security.yml@main
     with:
       language: 'go'
       go-version: '1.22'
       trivy-severity: 'CRITICAL,HIGH'
       fail-on-critical: true
-
-  # 3. Docker Build & Deploy no Amazon ECR
-  # Roda exclusivamente em Push na Main/Master após Quality e Security passarem
-  build-and-deploy:
-    name: Docker Build & ECR Deploy
-    needs: [quality, security]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-    uses: oseiasal/.github/.github/workflows/reusable-docker-push.yml@main
-    with:
-      image-name: '$REPOSITORY_NAME'
-      dockerfile-path: 'Dockerfile'
-      aws-region: 'us-east-1'
-      push-image: true
-      tag-latest: true
-    secrets:
-      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
