@@ -53,10 +53,25 @@ jobs:
       - name: Run Bandit SAST Scan
         run: |
           if ls *.py 1> /dev/null 2>&1 || [ -d "app" ] || [ -f "app.py" ]; then
-            if [ "${{ inputs.fail-on-critical }}" = "true" ]; then
-              bandit -r . -ll --skip B104 -x ./tests,./venv,./.venv
+            bandit -r . -ll --skip B104 -x ./tests,./venv,./.venv -o bandit-results.txt -f txt || true
+            cat bandit-results.txt
+            
+            echo "### 🔍 SAST Scan Summary (Bandit Python)" >> $GITHUB_STEP_SUMMARY
+            if grep -E "Total issues \(by severity\):.*(High|Medium): [1-9]" bandit-results.txt > /dev/null 2>&1; then
+              echo "⚠️ **Apontamentos de segurança detectados no código Python:**" >> $GITHUB_STEP_SUMMARY
+              echo "<details open><summary><b>Clique para ver os apontamentos do Bandit</b></summary>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```text' >> $GITHUB_STEP_SUMMARY
+              cat bandit-results.txt >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "</details>" >> $GITHUB_STEP_SUMMARY
+              
+              if [ "${{ inputs.fail-on-critical }}" = "true" ]; then
+                echo "::error::Bandit detectou vulnerabilidades no código."
+                exit 1
+              fi
             else
-              bandit -r . -ll --skip B104 -x ./tests,./venv,./.venv || echo "⚠️ Bandit identificou apontamentos, mas fail-on-critical=false. Prosseguindo."
+              echo "✅ **Nenhuma vulnerabilidade crítica encontrada no código Python.**" >> $GITHUB_STEP_SUMMARY
             fi
           else
             echo "Nenhum arquivo Python encontrado para o Bandit. Pulando."
@@ -81,10 +96,25 @@ jobs:
         run: |
           if [ -f "go.mod" ]; then
             go install github.com/securego/gosec/v2/cmd/gosec@latest
-            if [ "${{ inputs.fail-on-critical }}" = "true" ]; then
-              gosec -fmt=text -severity=high -confidence=high ./...
+            gosec -fmt=text -severity=high -confidence=high -out=gosec-results.txt ./... || true
+            cat gosec-results.txt
+            
+            echo "### 🔍 SAST Scan Summary (Gosec Go)" >> $GITHUB_STEP_SUMMARY
+            if [ -s gosec-results.txt ] && grep -q "Issues:" gosec-results.txt && ! grep -q "Issues: 0" gosec-results.txt; then
+              echo "⚠️ **Apontamentos de segurança detectados no código Go:**" >> $GITHUB_STEP_SUMMARY
+              echo "<details open><summary><b>Clique para ver os apontamentos do Gosec</b></summary>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```text' >> $GITHUB_STEP_SUMMARY
+              cat gosec-results.txt >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "</details>" >> $GITHUB_STEP_SUMMARY
+              
+              if [ "${{ inputs.fail-on-critical }}" = "true" ]; then
+                echo "::error::Gosec detectou vulnerabilidades no código."
+                exit 1
+              fi
             else
-              gosec -fmt=text -severity=high -confidence=high ./... || echo "⚠️ Gosec identificou apontamentos, mas fail-on-critical=false. Prosseguindo."
+              echo "✅ **Nenhuma vulnerabilidade crítica encontrada no código Go.**" >> $GITHUB_STEP_SUMMARY
             fi
           else
             echo "Arquivo go.mod não encontrado. Pulando Gosec."
@@ -104,11 +134,12 @@ jobs:
           scan-type: 'fs'
           scan-ref: '.'
           format: 'table'
+          output: 'trivy-results.txt'
           exit-code: ${{ inputs.fail-on-critical && '1' || '0' }}
           ignore-unfixed: true
           severity: ${{ inputs.trivy-severity }}
 
-      - name: Security Summary
+      - name: Security Summary & Vulnerability Findings
         if: always()
         run: |
           echo "### 🛡️ DevSecOps Security Scan Summary" >> $GITHUB_STEP_SUMMARY
@@ -117,3 +148,22 @@ jobs:
           echo "| 🔍 **SAST** | Bandit (Python) / Gosec (Go) |" >> $GITHUB_STEP_SUMMARY
           echo "| 📦 **SCA** | Trivy FS (Severidades: \`${{ inputs.trivy-severity }}\`) |" >> $GITHUB_STEP_SUMMARY
           echo "| 🛑 **Bloquear em Falhas Críticas** | \`${{ inputs.fail-on-critical }}\` |" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f trivy-results.txt ] && [ -s trivy-results.txt ]; then
+            cat trivy-results.txt
+            if grep -E "(CRITICAL|HIGH|MEDIUM|LOW):" trivy-results.txt > /dev/null 2>&1 || grep -E "Total:" trivy-results.txt > /dev/null 2>&1; then
+              echo "| ⚠️ **Resultado SCA** | **⚠️ Vulnerabilidades encontradas** (veja abaixo) |" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "#### 📋 Apontamentos de Dependências (Trivy SCA)" >> $GITHUB_STEP_SUMMARY
+              echo "<details open><summary><b>Clique para expandir/recolher a tabela de vulnerabilidades</b></summary>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```text' >> $GITHUB_STEP_SUMMARY
+              cat trivy-results.txt >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "</details>" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| ✅ **Resultado SCA** | **✅ Nenhuma vulnerabilidade encontrada** |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "| ✅ **Resultado SCA** | **✅ Nenhuma vulnerabilidade encontrada** |" >> $GITHUB_STEP_SUMMARY
+          fi
