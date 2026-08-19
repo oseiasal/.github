@@ -28,7 +28,7 @@ jobs:
       trivy-severity: 'CRITICAL,HIGH'
       fail-on-critical: true
 
-  # 3. Docker Build & Push para Amazon ECR (OIDC Exclusivo)
+  # 3. Docker Build & Push para Amazon ECR
   deploy:
     name: Docker Build & ECR Push
     needs: [quality, security]
