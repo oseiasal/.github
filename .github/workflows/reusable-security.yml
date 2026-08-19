@@ -53,7 +53,11 @@ jobs:
       - name: Run Bandit SAST Scan
         run: |
           if ls *.py 1> /dev/null 2>&1 || [ -d "app" ] || [ -f "app.py" ]; then
-            bandit -r . -ll --skip B104 -x ./tests,./venv,./.venv
+            if [ "${{ inputs.fail-on-critical }}" = "true" ]; then
+              bandit -r . -ll --skip B104 -x ./tests,./venv,./.venv
+            else
+              bandit -r . -ll --skip B104 -x ./tests,./venv,./.venv || echo "⚠️ Bandit identificou apontamentos, mas fail-on-critical=false. Prosseguindo."
+            fi
           else
             echo "Nenhum arquivo Python encontrado para o Bandit. Pulando."
           fi
@@ -77,7 +81,11 @@ jobs:
         run: |
           if [ -f "go.mod" ]; then
             go install github.com/securego/gosec/v2/cmd/gosec@latest
-            gosec -fmt=text -severity=high -confidence=high ./... || echo "Gosec concluiu análise."
+            if [ "${{ inputs.fail-on-critical }}" = "true" ]; then
+              gosec -fmt=text -severity=high -confidence=high ./...
+            else
+              gosec -fmt=text -severity=high -confidence=high ./... || echo "⚠️ Gosec identificou apontamentos, mas fail-on-critical=false. Prosseguindo."
+            fi
           else
             echo "Arquivo go.mod não encontrado. Pulando Gosec."
           fi
@@ -96,7 +104,7 @@ jobs:
           scan-type: 'fs'
           scan-ref: '.'
           format: 'table'
-          exit-code: '1'
+          exit-code: ${{ inputs.fail-on-critical && '1' || '0' }}
           ignore-unfixed: true
           severity: ${{ inputs.trivy-severity }}
 
@@ -104,7 +112,8 @@ jobs:
         if: always()
         run: |
           echo "### 🛡️ DevSecOps Security Scan Summary" >> $GITHUB_STEP_SUMMARY
-          echo "| Tipo de Análise | Ferramenta | Status | Severidade Bloqueante |" >> $GITHUB_STEP_SUMMARY
-          echo "| :--- | :--- | :---: | :--- |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🔍 **SAST** | Bandit / Gosec | ✅ Executado | HIGH / CRITICAL |" >> $GITHUB_STEP_SUMMARY
-          echo "| 📦 **SCA** | Trivy FS | ✅ Executado | ${{ inputs.trivy-severity }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Propriedade | Valor |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔍 **SAST** | Bandit (Python) / Gosec (Go) |" >> $GITHUB_STEP_SUMMARY
+          echo "| 📦 **SCA** | Trivy FS (Severidades: \`${{ inputs.trivy-severity }}\`) |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🛑 **Bloquear em Falhas Críticas** | \`${{ inputs.fail-on-critical }}\` |" >> $GITHUB_STEP_SUMMARY
