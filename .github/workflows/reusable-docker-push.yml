@@ -29,14 +29,10 @@ on:
         default: true
     secrets:
       AWS_ACCOUNT_ID:
+        description: 'ID da conta AWS (opcional se AWS_ROLE_TO_ASSUME for informado)'
         required: false
       AWS_ROLE_TO_ASSUME:
-        required: false
-      AWS_ACCESS_KEY_ID:
-        required: false
-      AWS_SECRET_ACCESS_KEY:
-        required: false
-      AWS_SESSION_TOKEN:
+        description: 'ARN da Role IAM OIDC a ser assumida'
         required: false
 
 jobs:
@@ -61,54 +57,41 @@ jobs:
             docker tag ${{ inputs.image-name }}:${{ github.sha }} ${{ inputs.image-name }}:latest
           fi
 
-      # 1. Determinar modo de autenticação da AWS via variáveis de ambiente
-      - name: Determine AWS Auth Mode
-        id: aws-auth
+      # 1. Configurar Role ARN para autenticacao OIDC
+      - name: Configure AWS OIDC Role ARN
+        id: oidc-setup
         if: inputs.push-image
         env:
-          KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           ROLE_ARN: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
         run: |
-          if [ -n "$KEY_ID" ]; then
-            echo "auth_mode=keys" >> $GITHUB_OUTPUT
-          elif [ -n "$ROLE_ARN" ]; then
-            echo "auth_mode=role" >> $GITHUB_OUTPUT
+          if [ -n "$ROLE_ARN" ]; then
             echo "role_arn=$ROLE_ARN" >> $GITHUB_OUTPUT
           elif [ -n "$ACCOUNT_ID" ]; then
-            echo "auth_mode=role" >> $GITHUB_OUTPUT
             echo "role_arn=arn:aws:iam::${ACCOUNT_ID}:role/GitHubActionsECRRole" >> $GITHUB_OUTPUT
           else
-            echo "auth_mode=none" >> $GITHUB_OUTPUT
+            echo "::error::Autenticacao OIDC requer AWS_ROLE_TO_ASSUME ou AWS_ACCOUNT_ID configurados nos secrets."
+            exit 1
           fi
 
-      # 2. Autenticação AWS com Access Keys / Session Token
-      - name: Configure AWS Credentials (Keys / Token)
-        if: inputs.push-image && steps.aws-auth.outputs.auth_mode == 'keys'
+      # 2. Autenticacao AWS exclusivamente via OIDC (Sem credenciais estaticas)
+      - name: Configure AWS Credentials (OIDC Only)
+        if: inputs.push-image
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          role-to-assume: ${{ steps.oidc-setup.outputs.role_arn }}
           aws-region: ${{ inputs.aws-region }}
+          audience: sts.amazonaws.com
 
-      # 3. Autenticação AWS com OIDC IAM Role
-      - name: Configure AWS Credentials (OIDC Role)
-        if: inputs.push-image && steps.aws-auth.outputs.auth_mode == 'role'
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ steps.aws-auth.outputs.role_arn }}
-          aws-region: ${{ inputs.aws-region }}
-
-      # 4. Login no Amazon ECR
+      # 3. Login no Amazon ECR
       - name: Login to Amazon ECR
-        if: inputs.push-image && steps.aws-auth.outputs.auth_mode != 'none'
+        if: inputs.push-image
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # 5. Push para o Amazon ECR
+      # 4. Push para o Amazon ECR
       - name: Push Image to Amazon ECR
-        if: inputs.push-image && steps.aws-auth.outputs.auth_mode != 'none'
+        if: inputs.push-image
         run: |
           ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
           TARGET_IMAGE="$ECR_REGISTRY/${{ inputs.image-name }}"
@@ -130,5 +113,6 @@ jobs:
           echo "| **Imagem** | \`${{ inputs.image-name }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Tag SHA** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Região AWS** | \`${{ inputs.aws-region }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Modo Auth** | \`${{ steps.aws-auth.outputs.auth_mode }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Modo Auth** | \`OIDC (AssumeRoleWithWebIdentity)\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Role ARN** | \`${{ steps.oidc-setup.outputs.role_arn }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Push Efetuado** | \`${{ inputs.push-image }}\` |" >> $GITHUB_STEP_SUMMARY
