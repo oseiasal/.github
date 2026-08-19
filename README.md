@@ -70,6 +70,10 @@ with:
 
 ### 4. 🚀 Docker Build & ECR Push (`reusable-docker-push.yml`)
 ```yaml
+permissions:
+  id-token: write
+  contents: read
+
 uses: oseiasal/.github/.github/workflows/reusable-docker-push.yml@main
 with:
   image-name: 'meu-servico'
@@ -80,7 +84,4 @@ with:
 secrets:
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
   AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
 ```
