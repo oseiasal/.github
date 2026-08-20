@@ -1,0 +1,11 @@
+{
+    "name": "Kubernetes Kustomize Deploy Pipeline",
+    "description": "Pipeline oficial para deploy declarativo de manifestos Kubernetes via Kustomize e AWS EKS OIDC.",
+    "iconName": "kubernetes",
+    "categories": [
+        "Kubernetes",
+        "Deployment",
+        "AWS",
+        "DevOps"
+    ]
+}

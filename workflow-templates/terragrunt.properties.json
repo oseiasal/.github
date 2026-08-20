@@ -1,0 +1,11 @@
+{
+    "name": "Terragrunt & Terraform IaC Pipeline",
+    "description": "Pipeline oficial para validação, plan, apply e destroy de infraestrutura AWS via Terragrunt e AWS OIDC.",
+    "iconName": "terraform",
+    "categories": [
+        "Infrastructure",
+        "AWS",
+        "Terraform",
+        "DevOps"
+    ]
+}

@@ -1,0 +1,162 @@
+name: 🏗️ Terragrunt & Terraform Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: 'Diretório da stack do Terragrunt'
+        required: false
+        type: string
+        default: 'terraform/environments/dev'
+      terragrunt_action:
+        description: 'Ação do Terragrunt a executar (plan, apply, destroy, validate)'
+        required: false
+        type: string
+        default: 'plan'
+      aws_region:
+        description: 'Região da AWS'
+        required: false
+        type: string
+        default: 'us-east-1'
+      terraform_version:
+        description: 'Versão do Terraform'
+        required: false
+        type: string
+        default: '1.13.3'
+      terragrunt_version:
+        description: 'Versão do Terragrunt'
+        required: false
+        type: string
+        default: '1.1.1'
+      auto_approve:
+        description: 'Auto-aprovação para apply ou destroy'
+        required: false
+        type: boolean
+        default: false
+      run_security_scan:
+        description: 'Executar Trivy IaC Scan de misconfigurations'
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      AWS_ACCOUNT_ID:
+        description: 'ID da conta AWS'
+        required: false
+      AWS_ROLE_TO_ASSUME:
+        description: 'ARN da Role IAM OIDC a ser assumida'
+        required: false
+
+jobs:
+  terragrunt:
+    name: 🏗️ Terragrunt (${{ inputs.terragrunt_action }}) - ${{ inputs.working_directory }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: ⚙️ Setup Terraform (${{ inputs.terraform_version }})
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+          terraform_wrapper: false
+
+      - name: ⚙️ Setup Terragrunt (${{ inputs.terragrunt_version }})
+        run: |
+          TG_VERSION="${{ inputs.terragrunt_version }}"
+          echo "Baixando Terragrunt v${TG_VERSION}..."
+          wget -q https://github.com/gruntwork-io/terragrunt/releases/download/v${TG_VERSION}/terragrunt_linux_amd64 -O terragrunt
+          chmod +x terragrunt
+          sudo mv terragrunt /usr/local/bin/terragrunt
+          terragrunt --version
+
+      - name: 🧹 Lint & Formatting Check
+        run: |
+          echo "Validando formatação do Terraform e Terragrunt..."
+          terraform fmt -check -recursive ${{ inputs.working_directory }} || echo "::warning::Terraform fmt encontrou arquivos desalinhados."
+          terragrunt hclfmt --terragrunt-check --terragrunt-working-dir ${{ inputs.working_directory }} || echo "::warning::Terragrunt hclfmt encontrou blocos desalinhados."
+
+      - name: 🛡️ IaC Security Misconfiguration Scan (Trivy)
+        if: inputs.run_security_scan == true
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '${{ inputs.working_directory }}'
+          format: 'table'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '0'
+
+      # 1. Configuração de Role ARN para OIDC
+      - name: 🔐 Configure AWS OIDC Role ARN
+        id: oidc-setup
+        env:
+          ROLE_ARN: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+        run: |
+          if [ -n "$ROLE_ARN" ]; then
+            echo "role_arn=$ROLE_ARN" >> $GITHUB_OUTPUT
+          elif [ -n "$ACCOUNT_ID" ]; then
+            echo "role_arn=arn:aws:iam::${ACCOUNT_ID}:role/GitHubActionsWorkflowRole" >> $GITHUB_OUTPUT
+          else
+            echo "::error::Autenticação OIDC requer AWS_ROLE_TO_ASSUME ou AWS_ACCOUNT_ID configurados nos secrets."
+            exit 1
+          fi
+
+      # 2. Autenticação AWS exclusivamente via OIDC (Zero Static Keys)
+      - name: 🔑 Configure AWS Credentials (OIDC Only)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ steps.oidc-setup.outputs.role_arn }}
+          aws-region: ${{ inputs.aws-region }}
+          audience: sts.amazonaws.com
+
+      # 3. Execução do Terragrunt
+      - name: 🚀 Execute Terragrunt ${{ inputs.terragrunt_action }}
+        id: tg-exec
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          ACTION="${{ inputs.terragrunt_action }}"
+          echo "Executando Terragrunt $ACTION em ${{ inputs.working_directory }}..."
+          
+          if [ "$ACTION" == "validate" ]; then
+            terragrunt validate --terragrunt-non-interactive
+          elif [ "$ACTION" == "plan" ]; then
+            terragrunt plan --terragrunt-non-interactive -out=tfplan.binary
+          elif [ "$ACTION" == "apply" ]; then
+            if [ "${{ inputs.auto_approve }}" == "true" ]; then
+              terragrunt apply --terragrunt-non-interactive -auto-approve
+            else
+              echo "::error::Apply requer 'auto_approve: true' para execução automatizada no GitHub Actions."
+              exit 1
+            fi
+          elif [ "$ACTION" == "destroy" ]; then
+            if [ "${{ inputs.auto_approve }}" == "true" ]; then
+              terragrunt destroy --terragrunt-non-interactive -auto-approve
+            else
+              echo "::error::Destroy requer 'auto_approve: true' para execução automatizada no GitHub Actions."
+              exit 1
+            fi
+          else
+            echo "::error::Ação desconhecida: $ACTION"
+            exit 1
+          fi
+
+      - name: 📊 Generate Summary
+        if: always()
+        run: |
+          echo "### 🏗️ Terragrunt Execution Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Propriedade | Valor |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Diretório** | \`${{ inputs.working_directory }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Ação** | \`${{ inputs.terragrunt_action }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Região AWS** | \`${{ inputs.aws-region }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Terraform** | \`v${{ inputs.terraform_version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Terragrunt** | \`v${{ inputs.terragrunt_version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Autenticação** | \`OIDC Federated (Role: ${{ steps.oidc-setup.outputs.role_arn }})\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Auto Approve** | \`${{ inputs.auto_approve }}\` |" >> $GITHUB_STEP_SUMMARY

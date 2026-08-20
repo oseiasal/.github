@@ -1,0 +1,58 @@
+name: Infrastructure IaC Pipeline (Terragrunt)
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'terraform/**'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+    inputs:
+      working_directory:
+        description: 'Stack do Terragrunt a executar'
+        required: true
+        type: choice
+        options:
+          - 'terraform/environments/dev'
+          - 'terraform/environments/shared/ecr'
+        default: 'terraform/environments/dev'
+      action:
+        description: 'Ação a executar'
+        required: true
+        type: choice
+        options:
+          - 'plan'
+          - 'apply'
+          - 'destroy'
+          - 'validate'
+        default: 'plan'
+      auto_approve:
+        description: 'Confirmar apply ou destroy'
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: terragrunt-pipeline-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Execução de Plan em PRs ou disparo manual
+  terragrunt:
+    name: Terragrunt Execution
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    uses: oseiasal/.github/.github/workflows/reusable-terragrunt.yml@main
+    with:
+      working_directory: ${{ inputs.working_directory || 'terraform/environments/dev' }}
+      terragrunt_action: ${{ inputs.action || (github.event_name == 'pull_request' && 'plan' || 'plan') }}
+      aws_region: 'us-east-1'
+      auto_approve: ${{ inputs.auto_approve || false }}
+    secrets:
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}

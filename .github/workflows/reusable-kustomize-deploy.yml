@@ -1,0 +1,175 @@
+name: ☸️ Kubernetes Kustomize Deploy Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      k8s_overlay:
+        description: 'Caminho do overlay Kustomize a aplicar'
+        required: false
+        type: string
+        default: 'k8s/overlays/prod'
+      cluster_name:
+        description: 'Nome do cluster EKS na AWS'
+        required: false
+        type: string
+        default: 'toogle-cluster'
+      aws_region:
+        description: 'Região da AWS'
+        required: false
+        type: string
+        default: 'us-east-1'
+      namespace:
+        description: 'Namespace de destino no Kubernetes'
+        required: false
+        type: string
+        default: 'toogle-master'
+      dry_run:
+        description: 'Executar apenas dry-run de validação'
+        required: false
+        type: boolean
+        default: false
+      run_smoke_tests:
+        description: 'Executar smoke tests após o deploy'
+        required: false
+        type: boolean
+        default: true
+      kubectl_version:
+        description: 'Versão do kubectl'
+        required: false
+        type: string
+        default: 'v1.31.0'
+      kustomize_version:
+        description: 'Versão do kustomize'
+        required: false
+        type: string
+        default: 'v5.4.3'
+    secrets:
+      AWS_ACCOUNT_ID:
+        description: 'ID da conta AWS'
+        required: false
+      AWS_ROLE_TO_ASSUME:
+        description: 'ARN da Role IAM OIDC a ser assumida'
+        required: false
+
+jobs:
+  k8s-deploy:
+    name: ☸️ K8s Deploy (${{ inputs.k8s_overlay }})
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Kubectl (${{ inputs.kubectl_version }})
+        uses: azure/setup-kubectl@v4
+        with:
+          version: ${{ inputs.kubectl_version }}
+
+      - name: ⚙️ Setup Kustomize (${{ inputs.kustomize_version }})
+        uses: imranismail/setup-kustomize@v3
+        with:
+          kustomize-version: ${{ inputs.kustomize_version }}
+
+      - name: ⚙️ Setup Kubeconform (Linter & Schema Validator)
+        run: |
+          KUBECONFORM_VERSION="v0.6.7"
+          echo "Baixando Kubeconform ${KUBECONFORM_VERSION}..."
+          wget -q https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz
+          tar -xzf kubeconform-linux-amd64.tar.gz kubeconform
+          chmod +x kubeconform
+          sudo mv kubeconform /usr/local/bin/kubeconform
+          kubeconform -v
+
+      - name: 🔍 Validate & Build Kustomize Manifests
+        run: |
+          echo "Testando compilação do Kustomize em ${{ inputs.k8s_overlay }}..."
+          kustomize build ${{ inputs.k8s_overlay }} > compiled_manifests.yaml
+          echo "Validando esquemas do Kubernetes com Kubeconform..."
+          kubeconform -summary -strict compiled_manifests.yaml || echo "::warning::Kubeconform encontrou avisos nos manifestos compilados."
+
+      # 1. Configuração de Role ARN para OIDC
+      - name: 🔐 Configure AWS OIDC Role ARN
+        id: oidc-setup
+        env:
+          ROLE_ARN: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+        run: |
+          if [ -n "$ROLE_ARN" ]; then
+            echo "role_arn=$ROLE_ARN" >> $GITHUB_OUTPUT
+          elif [ -n "$ACCOUNT_ID" ]; then
+            echo "role_arn=arn:aws:iam::${ACCOUNT_ID}:role/GitHubActionsWorkflowRole" >> $GITHUB_OUTPUT
+          else
+            echo "::error::Autenticação OIDC requer AWS_ROLE_TO_ASSUME ou AWS_ACCOUNT_ID configurados nos secrets."
+            exit 1
+          fi
+
+      # 2. Autenticação AWS exclusivamente via OIDC
+      - name: 🔑 Configure AWS Credentials (OIDC Only)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ steps.oidc-setup.outputs.role_arn }}
+          aws-region: ${{ inputs.aws-region }}
+          audience: sts.amazonaws.com
+
+      # 3. Atualizar Kubeconfig do EKS
+      - name: ☸️ Connect to Amazon EKS Cluster
+        run: |
+          echo "Conectando ao cluster EKS: ${{ inputs.cluster_name }} na região ${{ inputs.aws_region }}..."
+          aws eks update-kubeconfig --region ${{ inputs.aws_region }} --name ${{ inputs.cluster_name }}
+          kubectl cluster-info
+
+      # 4. Deploy ou Dry-Run
+      - name: 🚀 Apply Kustomize Overlay to EKS
+        run: |
+          if [ "${{ inputs.dry_run }}" == "true" ]; then
+            echo "Executando DRY-RUN em ${{ inputs.k8s_overlay }}..."
+            kubectl apply -k ${{ inputs.k8s_overlay }} --dry-run=server
+          else
+            echo "Aplicando manifestos Kustomize em ${{ inputs.k8s_overlay }}..."
+            kubectl apply -k ${{ inputs.k8s_overlay }}
+          fi
+
+      # 5. Validação de Rollout dos 5 Microserviços
+      - name: ⏳ Verify Deployment Rollouts
+        if: inputs.dry_run == false
+        run: |
+          echo "Verificando rollout dos microsserviços no namespace ${{ inputs.namespace }}..."
+          
+          SERVICES=(
+            "analytics-service"
+            "auth-service"
+            "evaluation-service"
+            "flag-service"
+            "targeting-service"
+          )
+          
+          for service in "${SERVICES[@]}"; do
+            echo "Aguardando rollout de $service..."
+            kubectl rollout status deployment/$service -n ${{ inputs.namespace }} --timeout=180s
+          done
+
+      # 6. Smoke Tests pós-deploy
+      - name: 🧪 Execute Smoke Tests
+        if: inputs.dry_run == false && inputs.run_smoke_tests == true
+        run: |
+          echo "Executando verificação de saúde dos Pods..."
+          kubectl get pods -n ${{ inputs.namespace }} -o wide
+          kubectl get svc -n ${{ inputs.namespace }}
+          kubectl get ingress -n ${{ inputs.namespace }} || true
+
+      - name: 📊 Generate Summary
+        if: always()
+        run: |
+          echo "### ☸️ Kubernetes Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Propriedade | Valor |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Overlay Kustomize** | \`${{ inputs.k8s_overlay }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Cluster EKS** | \`${{ inputs.cluster_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Namespace** | \`${{ inputs.namespace }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Região AWS** | \`${{ inputs.aws_region }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Dry Run** | \`${{ inputs.dry_run }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Smoke Tests** | \`${{ inputs.run_smoke_tests }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Autenticação** | \`OIDC Federated (Role: ${{ steps.oidc-setup.outputs.role_arn }})\` |" >> $GITHUB_STEP_SUMMARY
