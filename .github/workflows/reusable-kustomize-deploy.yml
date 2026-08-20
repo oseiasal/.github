@@ -111,7 +111,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ steps.oidc-setup.outputs.role_arn }}
-          aws-region: ${{ inputs.aws-region }}
+          aws-region: ${{ inputs.aws_region }}
           audience: sts.amazonaws.com
 
       # 3. Atualizar Kubeconfig do EKS

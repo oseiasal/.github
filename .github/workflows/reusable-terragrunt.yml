@@ -113,7 +113,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ steps.oidc-setup.outputs.role_arn }}
-          aws-region: ${{ inputs.aws-region }}
+          aws-region: ${{ inputs.aws_region }}
           audience: sts.amazonaws.com
 
       # 3. Execução do Terragrunt
@@ -155,7 +155,7 @@ jobs:
           echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
           echo "| **Diretório** | \`${{ inputs.working_directory }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Ação** | \`${{ inputs.terragrunt_action }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Região AWS** | \`${{ inputs.aws-region }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Região AWS** | \`${{ inputs.aws_region }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Terraform** | \`v${{ inputs.terraform_version }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Terragrunt** | \`v${{ inputs.terragrunt_version }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Autenticação** | \`OIDC Federated (Role: ${{ steps.oidc-setup.outputs.role_arn }})\` |" >> $GITHUB_STEP_SUMMARY
