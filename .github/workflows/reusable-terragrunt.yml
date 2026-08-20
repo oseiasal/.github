@@ -120,24 +120,28 @@ jobs:
       - name: 🚀 Execute Terragrunt ${{ inputs.terragrunt_action }}
         id: tg-exec
         working-directory: ${{ inputs.working_directory }}
+        env:
+          TERRAGRUNT_NON_INTERACTIVE: "true"
+          TF_IN_AUTOMATION: "true"
+          TF_INPUT: "0"
         run: |
           ACTION="${{ inputs.terragrunt_action }}"
           echo "Executando Terragrunt $ACTION em ${{ inputs.working_directory }}..."
           
           if [ "$ACTION" == "validate" ]; then
-            terragrunt validate --terragrunt-non-interactive
+            terragrunt validate
           elif [ "$ACTION" == "plan" ]; then
-            terragrunt plan --terragrunt-non-interactive -out=tfplan.binary
+            terragrunt plan
           elif [ "$ACTION" == "apply" ]; then
             if [ "${{ inputs.auto_approve }}" == "true" ]; then
-              terragrunt apply --terragrunt-non-interactive -auto-approve
+              terragrunt apply -auto-approve
             else
               echo "::error::Apply requer 'auto_approve: true' para execução automatizada no GitHub Actions."
               exit 1
             fi
           elif [ "$ACTION" == "destroy" ]; then
             if [ "${{ inputs.auto_approve }}" == "true" ]; then
-              terragrunt destroy --terragrunt-non-interactive -auto-approve
+              terragrunt destroy -auto-approve
             else
               echo "::error::Destroy requer 'auto_approve: true' para execução automatizada no GitHub Actions."
               exit 1
@@ -146,6 +150,7 @@ jobs:
             echo "::error::Ação desconhecida: $ACTION"
             exit 1
           fi
+
 
       - name: 📊 Generate Summary
         if: always()
