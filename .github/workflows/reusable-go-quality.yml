@@ -32,7 +32,6 @@ jobs:
         with:
           version: v1.59.1
           args: --timeout=5m
-        continue-on-error: true
 
   build-and-test:
     name: Build & Unit Tests (Go)
