@@ -27,6 +27,21 @@ on:
         required: false
         type: boolean
         default: true
+      scan-image:
+        description: 'Executar Trivy Container Scan na imagem Docker construída'
+        required: false
+        type: boolean
+        default: true
+      fail-on-critical:
+        description: 'Bloquear o push caso sejam encontradas vulnerabilidades críticas'
+        required: false
+        type: boolean
+        default: true
+      trivy-severity:
+        description: 'Severidades a verificar no Container Scan'
+        required: false
+        type: string
+        default: 'CRITICAL,HIGH'
     secrets:
       AWS_ACCOUNT_ID:
         description: 'ID da conta AWS (opcional se AWS_ROLE_TO_ASSUME for informado)'
@@ -55,6 +70,48 @@ jobs:
           docker build -f ${{ inputs.dockerfile-path }} -t ${{ inputs.image-name }}:${{ github.sha }} .
           if [ "${{ inputs.tag-latest }}" = "true" ]; then
             docker tag ${{ inputs.image-name }}:${{ github.sha }} ${{ inputs.image-name }}:latest
+          fi
+
+      # 🛡️ Container Scan com Trivy (na imagem Docker antes do push para o ECR)
+      - name: 🛡️ Trivy Container Image Scan
+        if: inputs.scan-image
+        uses: aquasecurity/trivy-action@v0.20.0
+        with:
+          scan-type: 'image'
+          image-ref: '${{ inputs.image-name }}:${{ github.sha }}'
+          format: 'table'
+          output: 'trivy-container-results.txt'
+          exit-code: ${{ inputs.fail-on-critical && '1' || '0' }}
+          ignore-unfixed: true
+          severity: ${{ inputs.trivy-severity }}
+
+      - name: 📋 Container Scan Summary
+        if: always() && inputs.scan-image
+        run: |
+          echo "### 🐳 Trivy Container Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Propriedade | Valor |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Imagem Analisada** | \`${{ inputs.image-name }}:${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Severidades** | \`${{ inputs.trivy-severity }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Bloquear em Críticas** | \`${{ inputs.fail-on-critical }}\` |" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f trivy-container-results.txt ] && [ -s trivy-container-results.txt ]; then
+            cat trivy-container-results.txt
+            if grep -E "(CRITICAL|HIGH|MEDIUM|LOW):" trivy-container-results.txt > /dev/null 2>&1 || grep -E "Total:" trivy-container-results.txt > /dev/null 2>&1; then
+              echo "| ⚠️ **Resultado Scan** | **⚠️ Vulnerabilidades encontradas na imagem** |" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "#### 📋 Detalhes das Vulnerabilidades (Trivy Container)" >> $GITHUB_STEP_SUMMARY
+              echo "<details open><summary><b>Clique para ver as vulnerabilidades</b></summary>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```text' >> $GITHUB_STEP_SUMMARY
+              cat trivy-container-results.txt >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "</details>" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| ✅ **Resultado Scan** | **✅ Nenhuma vulnerabilidade encontrada na imagem** |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "| ✅ **Resultado Scan** | **✅ Nenhuma vulnerabilidade encontrada na imagem** |" >> $GITHUB_STEP_SUMMARY
           fi
 
       # 1. Configurar Role ARN para autenticacao OIDC
