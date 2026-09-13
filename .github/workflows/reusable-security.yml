@@ -4,10 +4,15 @@ on:
   workflow_call:
     inputs:
       language:
-        description: 'Linguagem do projeto (auto, python, go)'
+        description: 'Linguagem do projeto (auto, python, go, iac, none)'
         required: false
         type: string
         default: 'auto'
+      enable-iac-scan:
+        description: 'Habilitar scan de IaC (Trivy Config para Terraform e Kubernetes)'
+        required: false
+        type: boolean
+        default: true
       python-version:
         description: 'Versão do Python para análise SAST'
         required: false
@@ -33,7 +38,7 @@ jobs:
   sast-python:
     name: SAST - Bandit (Python Security)
     runs-on: ubuntu-latest
-    if: inputs.language == 'python' || inputs.language == 'auto'
+    if: (inputs.language == 'python' || inputs.language == 'auto') && inputs.language != 'iac' && inputs.language != 'none'
 
     steps:
       - name: Checkout Code
@@ -43,7 +48,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ inputs.python-version }}
-          cache: 'pip'
 
       - name: Install Bandit
         run: |
@@ -80,7 +84,7 @@ jobs:
   sast-go:
     name: SAST - Gosec (Go Security)
     runs-on: ubuntu-latest
-    if: inputs.language == 'go' || inputs.language == 'auto'
+    if: (inputs.language == 'go' || inputs.language == 'auto') && inputs.language != 'iac' && inputs.language != 'none'
 
     steps:
       - name: Checkout Code
@@ -90,7 +94,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: ${{ inputs.go-version }}
-          cache: true
 
       - name: Run Gosec Security Scanner
         run: |
@@ -167,3 +170,52 @@ jobs:
           else
             echo "| ✅ **Resultado SCA** | **✅ Nenhuma vulnerabilidade encontrada** |" >> $GITHUB_STEP_SUMMARY
           fi
+
+  iac-trivy:
+    name: IaC - Trivy Config (IaC Misconfiguration Scan)
+    runs-on: ubuntu-latest
+    if: inputs.enable-iac-scan && (inputs.language == 'iac' || inputs.language == 'terraform' || inputs.language == 'auto')
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy IaC Scanner (Config Mode)
+        uses: aquasecurity/trivy-action@v0.20.0
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'table'
+          output: 'trivy-iac-results.txt'
+          exit-code: ${{ inputs.fail-on-critical && '1' || '0' }}
+          severity: ${{ inputs.trivy-severity }}
+
+      - name: IaC Summary & Findings
+        if: always()
+        run: |
+          echo "### 🏗️ IaC Security Scan Summary (Terraform & Kubernetes)" >> $GITHUB_STEP_SUMMARY
+          echo "| Propriedade | Valor |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔍 **Scan Type** | Trivy Config (IaC Misconfigurations) |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🛡️ **Severidades** | \`${{ inputs.trivy-severity }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🛑 **Bloquear em Falhas Críticas** | \`${{ inputs.fail-on-critical }}\` |" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f trivy-iac-results.txt ] && [ -s trivy-iac-results.txt ]; then
+            cat trivy-iac-results.txt
+            if grep -E "(CRITICAL|HIGH|MEDIUM|LOW):" trivy-iac-results.txt > /dev/null 2>&1 || grep -E "Total:" trivy-iac-results.txt > /dev/null 2>&1; then
+              echo "| ⚠️ **Resultado IaC** | **⚠️ Apontamentos de configuração encontrados** (veja abaixo) |" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "#### 📋 Apontamentos de IaC (Trivy Config)" >> $GITHUB_STEP_SUMMARY
+              echo "<details open><summary><b>Clique para expandir/recolher os apontamentos</b></summary>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```text' >> $GITHUB_STEP_SUMMARY
+              cat trivy-iac-results.txt >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "</details>" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| ✅ **Resultado IaC** | **✅ Nenhuma misconfiguration encontrada** |" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "| ✅ **Resultado IaC** | **✅ Nenhuma misconfiguration encontrada** |" >> $GITHUB_STEP_SUMMARY
+          fi
+
