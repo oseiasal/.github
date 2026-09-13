@@ -148,6 +148,7 @@ jobs:
 
       # 4. Push para o Amazon ECR
       - name: Push Image to Amazon ECR
+        id: push-ecr
         if: inputs.push-image
         run: |
           ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
@@ -171,5 +172,25 @@ jobs:
           echo "| **Tag SHA** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Região AWS** | \`${{ inputs.aws-region }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Modo Auth** | \`OIDC (AssumeRoleWithWebIdentity)\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Role ARN** | \`${{ steps.oidc-setup.outputs.role_arn }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Push Efetuado** | \`${{ inputs.push-image }}\` |" >> $GITHUB_STEP_SUMMARY
+
+          ROLE_DISPLAY="${{ steps.oidc-setup.outputs.role_arn }}"
+          if [ -z "$ROLE_DISPLAY" ]; then
+            ROLE_DISPLAY="Não configurado / Não executado"
+          fi
+          echo "| **Role ARN** | \`$ROLE_DISPLAY\` |" >> $GITHUB_STEP_SUMMARY
+
+          PUSH_OUTCOME="${{ steps.push-ecr.outcome }}"
+          if [ "$PUSH_OUTCOME" = "success" ]; then
+            PUSH_STATUS="✅ Sim (Push realizado com sucesso)"
+          elif [ "$PUSH_OUTCOME" = "failure" ]; then
+            PUSH_STATUS="❌ Falhou (Erro no envio ao ECR)"
+          elif [ "$PUSH_OUTCOME" = "skipped" ]; then
+            if [ "${{ inputs.push-image }}" = "false" ]; then
+              PUSH_STATUS="⏭️ Não (Desativado pelo input push-image)"
+            else
+              PUSH_STATUS="🛑 Não (Bloqueado por falha em etapa anterior)"
+            fi
+          else
+            PUSH_STATUS="⏭️ Não executado"
+          fi
+          echo "| **Push Efetuado** | **$PUSH_STATUS** |" >> $GITHUB_STEP_SUMMARY
